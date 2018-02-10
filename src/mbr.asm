@@ -39,9 +39,9 @@ load_vbr:
 
     push 0                  ; upper 32-bits of 48-bit starting LBAs
     push 0
-    mov ax, [bx + 10]
+    mov ax, [bx + 10]       ; lower 32-bits of 48-bit starting LBA
     push ax
-    mov ax, [bx + 8]        ; lower 32-bits of 48-bit starting LBA
+    mov ax, [bx + 8]
     push ax
     push 07e0h              ; buffer segment
     push 0                  ; buffer offset   
@@ -56,12 +56,10 @@ load_vbr:
 
     mov ah, 42h
     int 13h                 ; read vbr sector
-
     pop ds
-
-    sub sp, 16              ; clear address packet structure
-
     jc load_vbr_failure
+
+    add sp, 16              ; clear address packet structure
 
     push ds
     push msg_3
@@ -72,6 +70,8 @@ load_vbr:
     jmp 512
 
 load_vbr_failure:
+
+    ; no need to clear address packet structure as we are going to sleep anyway
 
     push ds
     push err_msg_2
