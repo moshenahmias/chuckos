@@ -1,23 +1,23 @@
 [BITS 16]
 	
-    mov ax, 0800h                   ; set stack segment
+    mov ax, 0x0800                  ; set stack segment
     mov ss, ax
     mov sp, 4096                    ; set 4k stack
-    mov ax, 07C0h					; set data segment
+    mov ax, 0x07C0					; set data segment
     mov ds, ax
 
     push ds
     push msg_1
 	call print_string
 
-    mov bx, 01beh                   ; set 1st partition entry
+    mov bx, 0x01be                  ; set 1st partition entry
 
 check_boot_flag:
 
     mov al, [bx]
-    cmp al, 80h
+    cmp al, 0x80
     je load_vbr
-    cmp bx, 01eeh
+    cmp bx, 0x01ee
     je no_boot_partition
     add bx, 16                      ; set next partition entry
     jmp check_boot_flag
@@ -43,19 +43,18 @@ load_vbr:
     push ax
     mov ax, [bx + 8]
     push ax
-    push 07e0h              ; buffer segment
+    push 0x07e0             ; buffer segment
     push 0                  ; buffer offset   
     push 1                  ; number of sectors to transfer   
-    push 0010h              ; always 0 | size of packet
+    push 0x0010             ; always 0 | size of packet
 
     mov si, sp              ; set address packet structure
-  
     push ds
     mov ax, ss
     mov ds, ax
 
-    mov ah, 42h
-    int 13h                 ; read vbr sector
+    mov ah, 0x42
+    int 0x13                ; read vbr sector
     pop ds
     jc load_vbr_failure
 
@@ -65,9 +64,9 @@ load_vbr:
     push msg_3
 	call print_string
 
-    mov ax, 07e0h           ; jump to vbr
-    mov ds, ax
-    jmp 512
+    mov si, bx              ; deliver ds:si to vbr code (partition entry)
+
+    jmp 0x07e0:0x0000       ; jump to vbr
 
 load_vbr_failure:
 
@@ -98,12 +97,12 @@ print_string:
     mov ds, ax
 	push si
 	mov si, [bp + 4]    ; string offset
-	mov ah, 0Eh
+	mov ah, 0x0E
 .next:
 	lodsb
 	cmp al, 0
 	je .done
-	int 10h
+	int 0x10
 	jmp .next
 .done:
 	pop si
