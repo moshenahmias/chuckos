@@ -12,8 +12,6 @@ org 0x3e                    ; offset inside vbr sector
     push msg_1
 	call print_string
 
-xchg bx, bx
-
 	; calc fat lba
 	mov bx, [14]			; bx = volume reserved sectors (fat offset)
 	add bx, [es:di + 8]		; bx = partition lba (lower) + reserved sectors = fat lba (lower)
@@ -21,12 +19,32 @@ xchg bx, bx
 	mov si, sp
 	setc [si]
 	pop ax	
-    add ax, [es:di + 10]		; ax = fat lba (upper)
+    add ax, [es:di + 10]	; ax = fat lba (upper)
 
-	push 6
-	push ax
-	push bx
-	call next_cluster
+	; calc root dir lba
+	
+	; calc data lba
+
+	; search for boot.bin
+
+	; load boot bin
+
+	; jump
+
+	;push 6
+	;push ax
+	;push bx
+	;call next_cluster
+
+	xchg bx, bx
+
+	push 2
+	push 1
+	push 0x0000
+	push 0x0920
+	push 0x0500
+	push 0x0000
+	call load_cluster
 
 	xchg bx, bx
 
@@ -38,12 +56,90 @@ xchg bx, bx
         msg_1     db '[vbr] loading kernel ...', 13, 10, 0   
 
 
+; function  : load_cluster
+; desc      : load cluster by its id
+; param I   : cluster id
+; param II	: sectors per cluster
+; param III : data lba upper word
+; param IV	: data lba lower word
+; param V 	: buffer segment
+; param VI	: buffer offset
+; return	: error code in ah (0 == no error)
+load_cluster:
+	push bp
+	mov bp, sp
+	push bx
+	push cx
+	push dx
+	push si
+	push es
+	push di
+
+	mov cx, dx
+	mov ax, [bp + 14]	; ax = cluster id
+	sub ax, 2			; first cluster is cluster 2
+	mov bx, [bp + 12]	; bx = sectors per cluster
+	mul bx				; dxax = ax * bx
+	add ax, [bp + 8]	; ax = ax + data lba lower word
+	push 0
+	mov si, sp
+	setc [si]
+	pop bx				; bx = previous add carry
+	add dx, [bp + 10]	; dx = dx + data lba upper word
+	add dx, bx			; dx = dx + carry
+	xchg cx, dx			; cx = dx + carry
+
+						; ax = cluster lba lower
+						; cx = cluster lba upper
+
+	mov bx, [bp + 12]	; bx = sectors per cluster
+	mov es, [bp + 6]	; es = buffer segment
+	mov si, [bp + 4]	; si = buffer offset
+
+.load:
+
+	push cx
+	push ax
+	push es	
+	push si
+	call load_sector	; load cluster sector
+
+	cmp ah, 0
+	jne .done			; failed to load sector
+
+	dec bx
+	jz .done			; finished
+
+	inc ax				; calc next lba
+	push 0
+	mov di, sp
+	setc [di]
+	add cx, di
+
+	add si, 512			; inc buffer pointer
+
+	jmp .load			; load next sector
+
+.done:
+
+	pop di
+	pop es
+	pop si
+	pop dx
+	pop cx
+	pop bx
+	pop bp
+	ret 12
+
 ; function  : next_cluster
-; desc      : 
-; param I   : id
+; desc      : get the next cluster in chain
+; param I   : current cluster id
 ; param II  : fat lba upper word
 ; param III : fat lba lower word
-; return	: next cluster in bx (error code in ah, 0 means no error)
+; return	: next cluster in bx or the following code:
+;			  	>= 0xFFF8 - end of chain
+;			  	== 0xFFF7 - bad cluster
+;			  error code in ah, 0 means no error
 next_cluster:
 	push bp
 	mov bp, sp
