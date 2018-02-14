@@ -12,6 +12,8 @@ org 0x3e                    ; offset inside vbr sector
     push msg_1
 	call print_string
 
+	mov bp, sp
+
 	; calc fat lba
 	mov bx, [14]			; bx = volume reserved sectors (fat offset)
 	add bx, [es:di + 8]		; bx = partition lba (lower) + reserved sectors = fat lba (lower)
@@ -21,40 +23,68 @@ org 0x3e                    ; offset inside vbr sector
 	pop ax	
     add ax, [es:di + 10]	; ax = fat lba (upper)
 
+	push ax					; [bp - 2] = fat lba (upper)
+	push bx					; [bp - 4] = fat lba (lower)
+
 	; calc root dir lba
 	
+	xor ah, ah
+	mov al, [16]			; al = number of fat tables
+	mov bx, [22]			; bx = number of sectors per fat
+	mul bx					; dxax = ax * bx = number of sectors in all fat tables
+	add ax, [bp - 4]		; ax = root dir lba (lower)
+	push 0
+	mov si, sp
+	setc [si]
+	pop bx	
+    add bx, [bp - 2]		; bx = root dir lba (upper)
+
+	push bx					; [bp - 6] = root dir lba (upper)
+	push ax					; [bp - 8] = root dir lba (lower)
+
 	; calc data lba
+
+	mov cx, [17]			; cx = number of directory entries
+	shr cx, 4				; cx = number of sectors in root dir (cx div 16)
+	add ax, cx				; ax = data lba (lower)
+	push 0
+	mov si, sp
+	setc [si]
+	pop cx
+	add bx, cx				; bx = data lba (upper)
+
+	push bx					; [bp - 10] = data lba (upper)
+	push ax					; [bp - 12] = data lba (lower)
 
 	; search for boot.bin
 
 	; load boot bin
 
+	; clear local vars
+
 	; jump
 
-	;push 6
-	;push ax
-	;push bx
-	;call next_cluster
-
-	xchg bx, bx
-
-	push 2
-	push 1
-	push 0x0000
-	push 0x0920
-	push 0x0500
-	push 0x0000
-	call load_cluster
-
-	xchg bx, bx
-
-    ; todo load boot.bin
-    ; todo load kernel.bin
-
+  
     jmp $
 
         msg_1     db '[vbr] loading kernel ...', 13, 10, 0   
 
+
+
+; function  : find_first_cluster
+; desc      : finds the first cluster of a file
+; param I   : pointer to file name
+; param II	: root dir lba upper word
+; param III : root dir lba lower word
+; param IV	: total sectors in dir
+; return	: cluster id in bx
+;			  error code in ah (0 == no error)
+find_first_cluster:
+	push bp
+	mov bp, sp
+
+	pop bp
+	ret 8
 
 ; function  : load_cluster
 ; desc      : load cluster by its id
