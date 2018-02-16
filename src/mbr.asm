@@ -64,6 +64,8 @@ load_vbr:
     push msg_3
 	call print_string
 
+    ; todo: verify vbr last word
+
     mov si, bx              ; deliver ds:si to vbr code (partition entry)
 
     jmp 0x07e0:0x0000       ; jump to vbr

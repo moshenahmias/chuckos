@@ -1,5 +1,9 @@
 [BITS 16]
-org 0x3e                    ; offset inside vbr sector
+
+	jmp short 0x003c
+	nop
+
+	times 62-($-$$) db 0	; BPB area (59 bytes)
 
 	mov ax, ds				; es:di = pointer to partition entry
 	mov es, ax
@@ -27,7 +31,7 @@ org 0x3e                    ; offset inside vbr sector
 	push bx					; [bp - 4] = fat lba (lower)
 
 	; calc root dir lba
-	
+	mov cx, dx
 	xor ah, ah
 	mov al, [16]			; al = number of fat tables
 	mov bx, [22]			; bx = number of sectors per fat
@@ -37,7 +41,9 @@ org 0x3e                    ; offset inside vbr sector
 	mov si, sp
 	setc [si]
 	pop bx	
-    add bx, [bp - 2]		; bx = root dir lba (upper)
+    add bx, dx
+	add bx, [bp - 2]		; bx = root dir lba (upper)
+	xchg cx, dx
 
 	push bx					; [bp - 6] = root dir lba (upper)
 	push ax					; [bp - 8] = root dir lba (lower)
@@ -56,35 +62,33 @@ org 0x3e                    ; offset inside vbr sector
 	push bx					; [bp - 10] = data lba (upper)
 	push ax					; [bp - 12] = data lba (lower)
 
-	; search for boot.bin
+	; calc vbr part 2 lba
+	mov bx, 1
+	add bx, [es:di + 8]		; bx = vbr part 2 lba (lower)
+    push 0
+	mov si, sp
+	setc [si]
+	pop ax
+    add ax, [es:di + 10]	; ax = vbr part 2 lba (upper)
+	
+	; load next boot sector
+	push ax
+	push bx
+	push ds
+	push 0x0200
+	call load_sector
 
-	; load boot bin
+	cmp ah, 0
+	je vbr_part_2
 
-	; clear local vars
+    push ds
+    push err_msg_1
+	call print_string
 
-	; jump
+	jmp $
 
-  
-    jmp $
-
-        msg_1     db '[vbr] loading kernel ...', 13, 10, 0   
-
-
-
-; function  : find_first_cluster
-; desc      : finds the first cluster of a file
-; param I   : pointer to file name
-; param II	: root dir lba upper word
-; param III : root dir lba lower word
-; param IV	: total sectors in dir
-; return	: cluster id in bx
-;			  error code in ah (0 == no error)
-find_first_cluster:
-	push bp
-	mov bp, sp
-
-	pop bp
-	ret 8
+	msg_1     	db '[vbr] loading part II ...', 13, 10, 0  
+	err_msg_1   db '[vbr] failed loading part II.', 13, 10, 0
 
 ; function  : load_cluster
 ; desc      : load cluster by its id
@@ -274,10 +278,10 @@ print_string:
 	push bp
 	mov bp, sp
     push ds
-    mov ax, [bp + 6]    ; string segment
+    mov ax, [bp + 6]   		; string segment
     mov ds, ax
 	push si
-	mov si, [bp + 4]    ; string offset
+	mov si, [bp + 4]  		; string offset
 	mov ah, 0x0E
 .next:
 	lodsb
@@ -290,3 +294,43 @@ print_string:
     pop ds
 	pop bp
 	ret 4
+
+	times 510-($-$$) db 0
+	dw 0xaa55				; boot signature
+
+vbr_part_2:
+
+	xchg bx, bx
+
+    push ds
+    push msg_2
+	call print_string
+
+	jmp $
+
+    msg_2     	db '[vbr] part II loaded', 13, 10, 0   
+
+
+	; search for boot.bin
+
+	; load boot bin
+
+	; clear local vars
+
+	; jump
+
+
+; function  : find_first_cluster
+; desc      : finds the first cluster of a file
+; param I   : pointer to file name
+; param II	: root dir lba upper word
+; param III : root dir lba lower word
+; param IV	: total sectors in dir
+; return	: cluster id in bx
+;			  error code in ah (0 == no error)
+find_first_cluster:
+	push bp
+	mov bp, sp
+
+	pop bp
+	ret 8

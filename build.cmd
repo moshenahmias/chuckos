@@ -20,5 +20,11 @@ nasm -f bin -o bin/vbr.bin src/vbr.asm
 REM copy MBR
 dd if=bin/mbr.bin of=bin/hdd.img conv=notrunc
 
-REM copy VBR
-dd if=bin/vbr.bin of=bin/hdd.img seek=1048638 bs=1 conv=notrunc
+REM copy VBR first 3 bytes
+dd if=bin/vbr.bin of=bin/hdd.img seek=1048576 bs=1 count=3 conv=notrunc
+
+REM copy VBR boot code part I + boot signature
+dd if=bin/vbr.bin of=bin/hdd.img seek=1048638 bs=1 skip=62 count=450 conv=notrunc
+
+REM copy VBR boot code part II
+dd if=bin/vbr.bin of=bin/hdd.img seek=1049088 bs=1 skip=512 count=512 conv=notrunc
