@@ -1,9 +1,30 @@
 [BITS 16]
 	
-    mov ax, 0x0800                  ; set stack segment
+    mov ax, 0x7f00                  ; set stack segment
     mov ss, ax
     mov sp, 4096                    ; set 4k stack
-    mov ax, 0x07C0					; set data segment
+    mov ax, 0x07c0					; set data segment
+    mov ds, ax
+
+    ; relocate mbr from 0x7c00 to 0x0500
+    
+    mov ax, 0x0050
+    mov es, ax
+    mov di, 0
+
+relocate_byte:
+
+    mov ax, [ds:di]
+    mov [es:di], ax
+    inc di
+    cmp di, 512
+    jne relocate_byte
+
+    jmp 0x0050:relocated_mbr
+
+relocated_mbr:
+    
+    mov ax, cs					    ; set data segment
     mov ds, ax
 
     push ds
@@ -37,13 +58,16 @@ load_vbr:
 
     ; build address packet structure
 
+    mov ax, 0x07c0          ; es = vbr segment 
+    mov es, ax
+
     push 0                  ; upper 32-bits of 48-bit starting LBAs
     push 0
     mov ax, [bx + 10]       ; lower 32-bits of 48-bit starting LBA
     push ax
     mov ax, [bx + 8]
     push ax
-    push 0x07e0             ; buffer segment
+    push es                 ; buffer segment
     push 0                  ; buffer offset   
     push 1                  ; number of sectors to transfer   
     push 0x0010             ; always 0 | size of packet
@@ -54,7 +78,7 @@ load_vbr:
     mov ds, ax
 
     mov ah, 0x42
-    int 0x13                ; read vbr sector
+    int 0x13                ; load vbr sector to 0x7c00
     pop ds
     jc load_vbr_failure
 
@@ -64,11 +88,23 @@ load_vbr:
     push msg_3
 	call print_string
 
-    ; todo: verify vbr last word
+    mov ax, [es:510]        ; verify vbr signature
+    cmp ax, 0xaa55
+    jne boot_signature_err
 
     mov si, bx              ; deliver ds:si to vbr code (partition entry)
 
-    jmp 0x07e0:0x0000       ; jump to vbr
+    jmp 0x07c0:0x0000       ; jump to vbr
+
+boot_signature_err:
+
+    ; no need to clear address packet structure as we are going to sleep anyway
+
+    push ds
+    push err_msg_3
+	call print_string
+    
+    jmp $
 
 load_vbr_failure:
 
@@ -85,7 +121,8 @@ load_vbr_failure:
                 db '[mbr] loading vbr ...', 13, 10, 0
     msg_3       db '[mbr] vbr loaded.', 13, 10, 0
     err_msg_1   db '[mbr] can', 39, 't find a bootable partition.', 13, 10, 0
-    err_msg_2   db '[mbr] boot failure (can', 39, 't load vbr).', 13, 10, 0
+    err_msg_2   db '[mbr] can', 39, 't load vbr.', 13, 10, 0
+    err_msg_3   db '[mbr] invalid vbr signature.', 13, 10, 0
 
 ; function  : print_string
 ; desc      : print string to screen
@@ -111,3 +148,7 @@ print_string:
     pop ds
 	pop bp
 	ret 4
+
+    times 436-($-$$) db 0   ; bootstrap limit
+    times 510-($-$$) db 0
+	dw 0xaa55				; boot signature

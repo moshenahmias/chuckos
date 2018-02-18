@@ -52,6 +52,9 @@
 
 	mov cx, [17]			; cx = number of directory entries
 	shr cx, 4				; cx = number of sectors in root dir (cx div 16)
+	
+	push cx					; [bp - 10] = number of sectors in root dir
+	
 	add ax, cx				; ax = data lba (lower)
 	push 0
 	mov si, sp
@@ -59,8 +62,8 @@
 	pop cx
 	add bx, cx				; bx = data lba (upper)
 
-	push bx					; [bp - 10] = data lba (upper)
-	push ax					; [bp - 12] = data lba (lower)
+	push bx					; [bp - 12] = data lba (upper)
+	push ax					; [bp - 14] = data lba (lower)
 
 	; calc vbr part 2 lba
 	mov bx, 1
@@ -87,8 +90,8 @@
 
 	jmp $
 
-	msg_1     	db '[vbr] loading part II ...', 13, 10, 0  
-	err_msg_1   db '[vbr] failed loading part II.', 13, 10, 0
+	msg_1     	db '[vbr] loading part II', 13, 10, 0  
+	err_msg_1   db '[vbr] failed loading part II', 13, 10, 0
 
 ; function  : load_cluster
 ; desc      : load cluster by its id
@@ -264,6 +267,7 @@ load_sector:
     int 0x13                ; read vbr sector (ah -> error code)
 
 	add sp, 16              ; clear address packet structure
+	
 	pop si
 	pop ds
 	pop bp
@@ -300,37 +304,309 @@ print_string:
 
 vbr_part_2:
 
-	xchg bx, bx
-
     push ds
     push msg_2
 	call print_string
 
+	; load boot.bin
+
+	push ds					; file name segment
+	push boot_file			; file name offset
+	mov ax, [bp - 2]		
+	push ax					; fat lba upper word
+	mov ax, [bp - 4]
+	push ax					; fat lba lower word
+	mov ax, [bp - 6]
+	push ax					; root dir lba upper word
+	mov ax, [bp - 8]
+	push ax					; root dir lba lower word
+	mov ax, [bp - 10]
+	push ax					; total sectors in dir
+	mov ax, [bp - 12]
+	push ax					; data lba upper word
+	mov ax, [bp - 14]
+	push ax					; data lba lower word
+	
+	xor ax, ax
+	mov al, [13]
+	push ax					; sectors per cluster
+
+
+	push 0x0820				; buffer segment
+	push 0					; buffer offset
+	call load_file
+
+	
+
+	add sp, 14				; clear saved lba offsets and other data from stack
 	jmp $
 
-    msg_2     	db '[vbr] part II loaded', 13, 10, 0   
+    msg_2     	db '[vbr] part II loaded.', 13, 10
+ 	     		db '[vbr] loading boot.bin ...', 13, 10, 0  
+	boot_file  	db 'IMDISK~1EXE' 
 
 
-	; search for boot.bin
 
-	; load boot bin
+; function   : load_file
+; desc       : load a file from root directory
+; param I    : file name segment
+; param II   : file name offset
+; param III  : fat lba upper word
+; param IV 	 : fat lba lower word
+; param V	 : root dir lba upper word
+; param VI	 : root dir lba lower word
+; param VII	 : total sectors in dir
+; param VIII : data lba upper word
+; param IX	 : data lba lower word
+; param X	 : sectors per cluster
+; param XI   : buffer segment
+; param XII	 : buffer offset
+load_file:
+	push bp
+	mov bp, sp
+	push bx
+	push es
+	push di
 
-	; clear local vars
+	; seach for first cluster
+	mov ax, [bp + 26]
+	push ax
+	mov ax, [bp + 24]
+	push ax
+	mov ax, [bp + 18]
+	push ax
+	mov ax, [bp + 16]
+	push ax
+	mov ax, [bp + 14]
+	push ax
+	call find_first_cluster	
 
-	; jump
+	mov es, [bp + 6]		; es:di = pointer to buffer
+	mov di, [bp + 4]
 
+.next:
+
+	xchg bx, bx
+
+	cmp ah, 0
+	jne .done
+
+	cmp bx, 0xfff8
+	je .done				; end of chain
+
+	cmp bx, 0xfff7
+	je .bad_cluster			; bad cluster found
+
+	cmp bx, 2
+	jb .invalid_cluster_id	; invalid id (< 2)
+
+	; load cluster # bx to es:di
+
+	push bx
+	mov ax, [bp + 8]
+	push ax
+	mov ax, [bp + 12]
+	push ax
+	mov ax, [bp + 10]
+	push ax
+	push es
+	push di
+	call load_cluster
+
+	xchg bx, bx
+
+	cmp ah, 0
+	jne .done
+
+	; get the next cluster in chain
+
+	push bx
+	mov ax, [bp + 22]
+	push ax
+	mov ax, [bp + 20]
+	push ax
+	call next_cluster
+
+	add di, 512		; todo
+
+	jmp .next
+
+.invalid_cluster_id:
+
+	mov ah, 0xdd
+
+.bad_cluster:
+
+	mov ah, 0xee
+
+.done:
+
+	pop di
+	pop es
+	pop bx
+	pop bp
+	ret 24
 
 ; function  : find_first_cluster
 ; desc      : finds the first cluster of a file
-; param I   : pointer to file name
-; param II	: root dir lba upper word
-; param III : root dir lba lower word
-; param IV	: total sectors in dir
-; return	: cluster id in bx
+; param I   : file name segment
+; param II  : file name offset
+; param III	: root dir lba upper word
+; param VI	: root dir lba lower word
+; param V	: total sectors in dir
+; return	: cluster id in bx (0 < bx < 2 means file cannot be found at root dir)
 ;			  error code in ah (0 == no error)
 find_first_cluster:
 	push bp
 	mov bp, sp
+	sub sp, 512				; allocate sector space at (bp - 512)
+	push cx
+	push si
+	push es
+	push di
 
+	mov cx, [bp + 4]		; cx = total sectors in dir
+
+.search_sector:
+
+	mov ax, [bp + 8]		; ax = sector upper
+	mov bx, [bp + 6]		; bx = sector lower
+
+	push ax					; push load sector parameters
+	push bx
+	push ss
+	mov ax, bp
+	sub ax, 512
+	push ax
+	
+	inc bx				; calc next sector (for next iteration)			
+	push 0
+	mov si, sp
+	setc [si]
+	pop si
+    add ax, si
+	mov [bp + 8], ax	; [bp + 8] = next sector upper
+	mov [bp + 6], bx	; [bp + 6] = next sector lower
+
+	call load_sector	; load
+
+	cmp ah, 0
+	jne .done				; failed to load sector
+
+	; sector loaded
+
+	; iterate sector entries
+	mov si, bp
+	sub si, 512				; si = first entry offset
+	mov bl, 16				; bl = number of entries in sector
+
+.scan_entry:
+
+	mov ah, [ss:si]			; check if empty
+	cmp ah, 0
+	jz .not_found			; no more entries
+
+	mov al, [ss:si + 11]	; al = file attribues
+	cmp al, 0x0f			; check if long file name entry
+	je .next_entry			; skip long file name entry
+	test al, 0x18			; check if dir or volume
+	jnz .next_entry			; skip dir or volume entry
+
+	; compare file name
+	mov ax, [bp + 12]
+	push ax
+	mov ax, [bp + 10]
+	push ax
+	push ss
+	push si
+	push 11
+	call compare_bytes
+
+	cmp ax, 0
+	jne .next_entry			; if ax = 0 the file was found
+
+.found:
+
+	xor ah, ah
+	mov bx, [ss:si + 26]	; bx = first cluster id
+	jmp .done
+
+.next_entry:
+
+	add si, 32				; si = next entry offset
+	dec bl
+	jnz .scan_entry
+
+	; scanned last entry
+
+	dec cx
+	jnz .search_sector
+
+.not_found:
+
+	xor ah, ah
+	xor bx, bx
+
+.done:
+
+	pop di
+	pop es
+	pop si
+	pop cx
+	add sp, 512			; clear allocated sector space
 	pop bp
-	ret 8
+	ret 10
+
+
+; function  : compare_bytes
+; desc      : compare two byte arrays
+; param I   : 1st array segment
+; param II  : 1st array offset
+; param III	: 2st array segment
+; param VI	: 2st array offset
+; param V	: bytes count
+; return	: ax = 0 iff equal
+compare_bytes:
+	push bp
+	mov bp, sp
+	push ds
+	push es
+	push di
+	push si
+	push cx
+
+ 	mov es, [bp + 12]		; es = 1st array segment
+	mov di, [bp + 10]		; di = 1st array offset
+	mov ds, [bp + 8]		; ds = 2st array segment
+	mov si, [bp + 6]		; si = 2st array offset
+	mov cx, [bp + 4]		; cx = bytes count
+
+.next_char:
+
+	cmp cx, 0
+	je .done				; all chars are equal
+
+	mov al, [es:di]			; get chars
+	mov ah, [ds:si]
+
+	cmp al, ah				; compare chars
+	jne .done				; not equal
+
+	inc di					; next char
+	inc si
+	dec cx
+	jmp .next_char
+
+.done:
+
+	mov ax, cx
+
+	pop cx
+	pop si
+	pop di
+	pop es
+	pop ds
+	pop bp
+	ret 10
+
+	times 1024-($-$$) db 0
