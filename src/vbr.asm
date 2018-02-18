@@ -5,6 +5,10 @@
 
 	times 62-($-$$) db 0	; BPB area (59 bytes)
 
+    mov ax, 0x7f00          ; set stack segment
+    mov ss, ax
+    mov sp, 4096            ; set 4k stack
+
 	mov ax, ds				; es:di = pointer to partition entry
 	mov es, ax
 	mov di, si
@@ -31,7 +35,7 @@
 	push bx					; [bp - 4] = fat lba (lower)
 
 	; calc root dir lba
-	mov cx, dx
+	push dx
 	xor ah, ah
 	mov al, [16]			; al = number of fat tables
 	mov bx, [22]			; bx = number of sectors per fat
@@ -43,7 +47,7 @@
 	pop bx	
     add bx, dx
 	add bx, [bp - 2]		; bx = root dir lba (upper)
-	xchg cx, dx
+	pop dx
 
 	push bx					; [bp - 6] = root dir lba (upper)
 	push ax					; [bp - 8] = root dir lba (lower)
@@ -90,7 +94,7 @@
 
 	jmp $
 
-	msg_1     	db '[vbr] loading part II', 13, 10, 0  
+	msg_1     	db '[vbr] loading part II ...', 13, 10, 0  
 	err_msg_1   db '[vbr] failed loading part II', 13, 10, 0
 
 ; function  : load_cluster
@@ -101,16 +105,14 @@
 ; param IV	: data lba lower word
 ; param V 	: buffer segment
 ; param VI	: buffer offset
-; return	: error code in ah (0 == no error)
+; return	: es:di = last loaded sector
+;			  error code in ah (0 == no error)
 load_cluster:
 	push bp
 	mov bp, sp
 	push bx
 	push cx
-	push dx
 	push si
-	push es
-	push di
 
 	mov cx, dx
 	mov ax, [bp + 14]	; ax = cluster id
@@ -131,14 +133,14 @@ load_cluster:
 
 	mov bx, [bp + 12]	; bx = sectors per cluster
 	mov es, [bp + 6]	; es = buffer segment
-	mov si, [bp + 4]	; si = buffer offset
+	mov di, [bp + 4]	; di = buffer offset
 
 .load:
 
 	push cx
 	push ax
 	push es	
-	push si
+	push di
 	call load_sector	; load cluster sector
 
 	cmp ah, 0
@@ -149,20 +151,24 @@ load_cluster:
 
 	inc ax				; calc next lba
 	push 0
-	mov di, sp
-	setc [di]
-	add cx, di
+	mov si, sp
+	setc [si]
+	pop si
+	add cx, si
 
-	add si, 512			; inc buffer pointer
+	add di, 512			; inc buffer pointer
+
+	jnc .load			; no overflow
+
+	mov si, es
+	add si, 0x1000
+	mov es, si			; next segment
 
 	jmp .load			; load next sector
 
 .done:
 
-	pop di
-	pop es
 	pop si
-	pop dx
 	pop cx
 	pop bx
 	pop bp
@@ -229,7 +235,7 @@ next_cluster:
 	pop dx
 	pop cx
 	pop bp
-	ret 4
+	ret 6
 
 ; function  : load_sector
 ; desc      : load a single sector
@@ -331,14 +337,12 @@ vbr_part_2:
 	mov al, [13]
 	push ax					; sectors per cluster
 
-
 	push 0x0820				; buffer segment
 	push 0					; buffer offset
 	call load_file
 
-	
-
 	add sp, 14				; clear saved lba offsets and other data from stack
+	
 	jmp $
 
     msg_2     	db '[vbr] part II loaded.', 13, 10
@@ -361,12 +365,16 @@ vbr_part_2:
 ; param X	 : sectors per cluster
 ; param XI   : buffer segment
 ; param XII	 : buffer offset
+; return	 : error code in ah (0 == no error)
 load_file:
 	push bp
 	mov bp, sp
 	push bx
+	push cx
 	push es
 	push di
+
+	push dx
 
 	; seach for first cluster
 	mov ax, [bp + 26]
@@ -379,20 +387,20 @@ load_file:
 	push ax
 	mov ax, [bp + 14]
 	push ax
-	call find_first_cluster	
+	call get_file_data	
+
+	pop dx
 
 	mov es, [bp + 6]		; es:di = pointer to buffer
 	mov di, [bp + 4]
 
 .next:
 
-	xchg bx, bx
-
 	cmp ah, 0
 	jne .done
 
 	cmp bx, 0xfff8
-	je .done				; end of chain
+	jae .done				; end of chain
 
 	cmp bx, 0xfff7
 	je .bad_cluster			; bad cluster found
@@ -411,9 +419,7 @@ load_file:
 	push ax
 	push es
 	push di
-	call load_cluster
-
-	xchg bx, bx
+	call load_cluster		; es:di = last loaded sector
 
 	cmp ah, 0
 	jne .done
@@ -427,7 +433,13 @@ load_file:
 	push ax
 	call next_cluster
 
-	add di, 512		; todo
+	add di, 512
+
+	jnc .next			; no overflow
+
+	mov cx, es
+	add cx, 0x1000
+	mov es, cx			; next segment
 
 	jmp .next
 
@@ -443,24 +455,26 @@ load_file:
 
 	pop di
 	pop es
+	pop cx
 	pop bx
 	pop bp
 	ret 24
 
-; function  : find_first_cluster
-; desc      : finds the first cluster of a file
+; function  : get_file_data
+; desc      : finds data about the file
 ; param I   : file name segment
 ; param II  : file name offset
 ; param III	: root dir lba upper word
 ; param VI	: root dir lba lower word
 ; param V	: total sectors in dir
-; return	: cluster id in bx (0 < bx < 2 means file cannot be found at root dir)
+; return	: bx = cluster id (0 < bx < 2 means file cannot be found at root dir)
+;			  cxdx = file size
+;			  al = attributes
 ;			  error code in ah (0 == no error)
-find_first_cluster:
+get_file_data:
 	push bp
 	mov bp, sp
 	sub sp, 512				; allocate sector space at (bp - 512)
-	push cx
 	push si
 	push es
 	push di
@@ -527,8 +541,12 @@ find_first_cluster:
 
 .found:
 
-	xor ah, ah
+	xor ah, ah				; ah = no error
+	mov al, [ss:si + 11]	; al = attributes
 	mov bx, [ss:si + 26]	; bx = first cluster id
+	mov dx, [ss:si + 28]	; dx = size of file (lower)
+	mov cx, [ss:si + 30]	; cx = size of file (upper)
+
 	jmp .done
 
 .next_entry:
@@ -552,7 +570,6 @@ find_first_cluster:
 	pop di
 	pop es
 	pop si
-	pop cx
 	add sp, 512			; clear allocated sector space
 	pop bp
 	ret 10
