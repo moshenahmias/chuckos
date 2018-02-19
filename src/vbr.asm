@@ -16,11 +16,10 @@
     mov ax, cs         		; set data segment
     mov ds, ax
 
-    push ds
-    push msg_1
-	call print_string
+	cmp word [11], 512
+	jne failed_loading_vbr_2	; only support 512 bytes sectors
 
-	mov bp, sp
+	mov bp, sp				; set bp for local vars
 
 	; calc fat lba
 	mov bx, [14]			; bx = volume reserved sectors (fat offset)
@@ -88,13 +87,14 @@
 	cmp ah, 0
 	je vbr_part_2
 
+failed_loading_vbr_2:
+
     push ds
     push err_msg_1
 	call print_string
 
 	jmp $
 
-	msg_1     	db '[vbr] loading part II ...', 13, 10, 0  
 	err_msg_1   db '[vbr] failed loading part II', 13, 10, 0
 
 ; function  : load_cluster
@@ -254,14 +254,10 @@ load_sector:
 
     push 0                  ; upper 32-bits of 48-bit starting LBAs
     push 0
-	mov ax, [bp + 10]		; lower 32-bits of 48-bit starting LBA
-    push ax
-    mov ax, [bp + 8]        
-    push ax
-	mov ax, [bp + 6]		; buffer segment
-	push ax             	
-	mov ax, [bp + 4]		; buffer offset
-	push ax
+	push word [bp + 10]		; lower 32-bits of 48-bit starting LBA
+    push word [bp + 8]        
+	push word [bp + 6]		; buffer segment           	
+	push word [bp + 4]		; buffer offset
 	push 1                  ; number of sectors to transfer   
     push 0x0010             ; always 0 | size of packet
 
@@ -314,41 +310,69 @@ vbr_part_2:
     push msg_2
 	call print_string
 
-	; load boot.bin
+	; load boot.bin to 0x0820:0x0000
+
+	xor bx, bx
 
 	push ds					; file name segment
 	push boot_file			; file name offset
-	mov ax, [bp - 2]		
-	push ax					; fat lba upper word
-	mov ax, [bp - 4]
-	push ax					; fat lba lower word
-	mov ax, [bp - 6]
-	push ax					; root dir lba upper word
-	mov ax, [bp - 8]
-	push ax					; root dir lba lower word
-	mov ax, [bp - 10]
-	push ax					; total sectors in dir
-	mov ax, [bp - 12]
-	push ax					; data lba upper word
-	mov ax, [bp - 14]
-	push ax					; data lba lower word
-	
-	xor ax, ax
-	mov al, [13]
-	push ax					; sectors per cluster
-
+	push word [bp - 2]		; fat lba upper word
+	push word [bp - 4]		; fat lba lower word
+	push word [bp - 6]		; root dir lba upper word
+	push word [bp - 8]		; root dir lba lower word
+	push word [bp - 10]		; total sectors in dir
+	push word [bp - 12]		; data lba upper word
+	push word [bp - 14]		; data lba lower word
+	mov bl, [13]
+	push bx					; sectors per cluster
 	push 0x0820				; buffer segment
 	push 0					; buffer offset
 	call load_file
 
-	add sp, 14				; clear saved lba offsets and other data from stack
-	
+	cmp ah, 0
+	jnz failed_loading_boot_bin
+
+	; load kernel.bin to 0x0700:0x0000
+
+	push ds					; file name segment
+	push kernel_file		; file name offset
+	push word [bp - 2]		; fat lba upper word
+	push word [bp - 4]		; fat lba lower word
+	push word [bp - 6]		; root dir lba upper word
+	push word [bp - 8]		; root dir lba lower word
+	push word [bp - 10]		; total sectors in dir
+	push word [bp - 12]		; data lba upper word
+	push word [bp - 14]		; data lba lower word
+	mov bl, [13]
+	push bx					; sectors per cluster
+	push 0x0700				; buffer segment
+	push 0					; buffer offset
+	call load_file
+
+	; todo
+	;cmp ah, 0
+	;jz goto_boon_bin
+	jmp goto_boon_bin
+
+failed_loading_boot_bin:
+failed_loading_kernel_bin:
+
 	jmp $
 
-    msg_2     	db '[vbr] part II loaded.', 13, 10
- 	     		db '[vbr] loading boot.bin ...', 13, 10, 0  
-	boot_file  	db 'IMDISK~1EXE' 
+goto_boon_bin:
 
+	add sp, 14				; clear saved lba offsets and other data from stack
+	
+	mov ax, es				; deliver ds:si to boot.bin code (partition entry)
+	mov ds, ax
+	mov si, di
+
+	jmp 0x0820:0x0000		; jump to loaded boot.bin
+
+    msg_2     	  db '[vbr] loading boot.bin ...', 13, 10, 0
+ 	err_msg_2     db '[vbr] boot failure.', 13, 10, 0 
+	boot_file  	  db 'BOOT    BIN' 
+	kernel_file	  db 'KERNEL  BIN'
 
 
 ; function   : load_file
@@ -377,16 +401,12 @@ load_file:
 	push dx
 
 	; seach for first cluster
-	mov ax, [bp + 26]
-	push ax
-	mov ax, [bp + 24]
-	push ax
-	mov ax, [bp + 18]
-	push ax
-	mov ax, [bp + 16]
-	push ax
-	mov ax, [bp + 14]
-	push ax
+	
+	push word [bp + 26]
+	push word [bp + 24]
+	push word [bp + 18]
+	push word [bp + 16]
+	push word [bp + 14]
 	call get_file_data	
 
 	pop dx
@@ -406,17 +426,14 @@ load_file:
 	je .bad_cluster			; bad cluster found
 
 	cmp bx, 2
-	jb .invalid_cluster_id	; invalid id (< 2)
+	jb .invalid_cluster_id	; invalid id (< 2) / file not found
 
 	; load cluster # bx to es:di
 
 	push bx
-	mov ax, [bp + 8]
-	push ax
-	mov ax, [bp + 12]
-	push ax
-	mov ax, [bp + 10]
-	push ax
+	push word [bp + 8]
+	push word [bp + 12]
+	push word [bp + 10]
 	push es
 	push di
 	call load_cluster		; es:di = last loaded sector
@@ -427,10 +444,8 @@ load_file:
 	; get the next cluster in chain
 
 	push bx
-	mov ax, [bp + 22]
-	push ax
-	mov ax, [bp + 20]
-	push ax
+	push word [bp + 22]
+	push word [bp + 20]
 	call next_cluster
 
 	add di, 512
@@ -493,16 +508,16 @@ get_file_data:
 	sub ax, 512
 	push ax
 	
-	inc bx				; calc next sector (for next iteration)			
+	inc bx					; calc next sector (for next iteration)			
 	push 0
 	mov si, sp
 	setc [si]
 	pop si
     add ax, si
-	mov [bp + 8], ax	; [bp + 8] = next sector upper
-	mov [bp + 6], bx	; [bp + 6] = next sector lower
+	mov [bp + 8], ax		; [bp + 8] = next sector upper
+	mov [bp + 6], bx		; [bp + 6] = next sector lower
 
-	call load_sector	; load
+	call load_sector		; load
 
 	cmp ah, 0
 	jne .done				; failed to load sector
@@ -527,10 +542,8 @@ get_file_data:
 	jnz .next_entry			; skip dir or volume entry
 
 	; compare file name
-	mov ax, [bp + 12]
-	push ax
-	mov ax, [bp + 10]
-	push ax
+	push word [bp + 12]
+	push word [bp + 10]
 	push ss
 	push si
 	push 11

@@ -63,10 +63,8 @@ load_vbr:
 
     push 0                  ; upper 32-bits of 48-bit starting LBAs
     push 0
-    mov ax, [bx + 10]       ; lower 32-bits of 48-bit starting LBA
-    push ax
-    mov ax, [bx + 8]
-    push ax
+    push word [bx + 10]      ; lower 32-bits of 48-bit starting LBA
+    push word [bx + 8]
     push es                 ; buffer segment
     push 0                  ; buffer offset   
     push 1                  ; number of sectors to transfer   

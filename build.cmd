@@ -3,14 +3,16 @@
 REM clean
 call clean.cmd
 
-REM compile MBR
+REM compile mbr.asm
 nasm -f bin -o bin/mbr.bin src/mbr.asm
-
 if %errorlevel% neq 0 exit /b %errorlevel%
 
-REM compile VBR
+REM compile vbr.asm
 nasm -f bin -o bin/vbr.bin src/vbr.asm
+if %errorlevel% neq 0 exit /b %errorlevel%
 
+REM compile boot.asm
+nasm -f bin -o bin/boot.bin src/boot.asm
 if %errorlevel% neq 0 exit /b %errorlevel%
 
 copy disk_formatted_128m.img bin\hdd.img
@@ -35,3 +37,17 @@ dd if=bin/vbr.bin of=bin/hdd.img seek=1048638 bs=1 skip=62 count=450 conv=notrun
 
 REM copy VBR boot code part II
 dd if=bin/vbr.bin of=bin/hdd.img seek=1049088 bs=1 skip=512 count=512 conv=notrunc
+
+REM force unmount hdd if mounted
+imdisk -D -m R:
+
+REM mount hdd
+imdisk -a -f bin/hdd.img -m R: -v 1
+if %errorlevel% neq 0 exit /b %errorlevel%
+
+REM copy boot.bin
+copy bin\boot.bin R:\
+
+REM unmount hdd
+imdisk -d -m R:
+if %errorlevel% neq 0 exit /b %errorlevel%
