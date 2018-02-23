@@ -38,6 +38,9 @@ if %errorlevel% neq 0 exit /b %errorlevel%
 REM copy boot.bin
 copy bin\boot.bin R:\
 
+REM copy kernel.bin
+copy bin\kernel.bin R:\
+
 REM unmount hdd
 imdisk -d -m R:
 if %errorlevel% neq 0 exit /b %errorlevel%

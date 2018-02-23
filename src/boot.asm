@@ -21,7 +21,7 @@
 
     mov ax, 0
     mov es, ax
-    mov di, 0x800
+    mov di, 0x0800
 
     mov cx, 4                           ; null segment descriptor
     rep stosw
@@ -44,26 +44,52 @@
 
     lidt [idt_ptr]                      ; set idtr
     
+    call test_a20                       ; test a20
+    cmp ax, 0
+    jne a20_enabled
+
     mov ax, 0x2401                      ; enable A20
     int 0x15
     
-    xchg bx, bx
+    call test_a20                       ; test a20 again
+    cmp ax, 0
+    jne a20_enabled
 
-    call test_a20
-
-    xchg bx, bx
+    push ds
+    push err_msg_1
+	call print_string
 
     jmp $
 
-    msg_1       db '[001] boot.bin loaded.', 13, 10
-                db '[001] init GDT and IDT ...', 13, 10, 0
+a20_enabled:
 
-    gdt_ptr     dw 23                   ; 3 descriptors
-                dd 0x800                ; 0x0:0x800
+    mov eax, cr0                        ; enable protected mode
+    or eax, 1
+    mov cr0, eax
 
-    idt_ptr     dw 2048                 ; 256 descriptors (currently not initialized)
-                dd 0                    ; 0x0:0x0
+    jmp prefetch_queue_cleared         ; clear_prefetch_queue
+    nop
+    nop
 
+prefetch_queue_cleared:
+
+    mov ax, 0x10                        ; set selectors to kernel data segment (2, gdt, 0)
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax
+    mov esp, 0x0009fbff                 ; stack pointer
+
+    db 0x66                             ; jmp to kernel
+    db 0xEA
+    dd 0x2800                           ; kernel offset
+    dw 0x0008                           ; selector (1, gdt, 0)
+ 
+
+; function  :test_a20
+; desc      : test if a20 is enabled
+; return    : 1 if enabled, 0 of not
 test_a20:
     push es
     push di
@@ -117,3 +143,13 @@ print_string:
     pop ds
 	pop bp
 	ret 4
+
+    
+    msg_1       db '[001] boot.bin loaded.', 13, 10, 0
+    err_msg_1   db '[001] failed to enable A20', 13, 10, 0
+
+    gdt_ptr     dw 23                   ; 3 descriptors
+                dd 0x800                ; 0x0:0x800
+
+    idt_ptr     dw 2048                 ; 256 descriptors (currently not initialized)
+                dd 0                    ; 0x0:0x0

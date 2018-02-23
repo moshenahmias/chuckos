@@ -332,7 +332,7 @@ vbr_part_2:
 	cmp ah, 0
 	jnz failed_loading_boot_bin
 
-	; load kernel.bin to 0x0700:0x0000
+	; load kernel.bin to 0x0280:0x0000
 
 	push ds					; file name segment
 	push kernel_file		; file name offset
@@ -345,21 +345,19 @@ vbr_part_2:
 	push word [bp - 14]		; data lba lower word
 	mov bl, [13]
 	push bx					; sectors per cluster
-	push 0x0700				; buffer segment
+	push 0x0280				; buffer segment
 	push 0					; buffer offset
 	call load_file
 
-	; todo
-	;cmp ah, 0
-	;jz goto_boon_bin
-	jmp goto_boon_bin
+	cmp ah, 0
+	jz goto_boot_bin
 
 failed_loading_boot_bin:
 failed_loading_kernel_bin:
 
 	jmp $
 
-goto_boon_bin:
+goto_boot_bin:
 
 	add sp, 14				; clear saved lba offsets and other data from stack
 	
