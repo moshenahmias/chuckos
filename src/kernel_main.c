@@ -1,13 +1,19 @@
+#include "kernel_screen.h"
+
 int kmain()
 {
-    //*((int*)0xb8000)=0x07 69 07 48;
+    // __asm__ __volatile__("xchg %bx, %bx");
 
-    char * p = 0xb8000;
+    clear_screen();
 
-    p[0] = 0x40;
-    p[1] = 0x07;
-    p[2] = 0x3c;
-    p[3] = 0x08;
+    int l = 0;
+
+    print_str(0, l++, "     _           _           ", DEFAULT_COLOR);
+    print_str(0, l++, " ___| |_ _ _ ___| |_ ___ ___ ", DEFAULT_COLOR);
+    print_str(0, l++, "|  _|   | | |  _| '_| . |_ -|", DEFAULT_COLOR);
+    print_str(0, l++, "|___|_|_|___|___|_,_|___|___|", DEFAULT_COLOR);
+    l++;
+    print_str(0, l++, "[002] Welcome to chuckos!", DEFAULT_COLOR);
 
     while(1);
 

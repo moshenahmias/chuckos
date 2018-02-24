@@ -20,10 +20,17 @@ REM compile kernel_main.c
 tcc -m32 -c src/kernel_main.c -o bin/kernel_main.o
 if %errorlevel% neq 0 exit /b %errorlevel%
 
-REM link kernel_jmp.o and kernel_main.o
-tcc -nostdlib bin/kernel_jmp.o bin/kernel_main.o -o bin/kernel.tmp 
+REM compile kernel_screen.c
+tcc -m32 -c src/kernel_screen.c -o bin/kernel_screen.o
 if %errorlevel% neq 0 exit /b %errorlevel%
 
+REM link kernel
+wlink @linker.txt
+
+REM link kernel_jmp.o and kernel_main.o
+REM tcc -nostdlib bin/kernel_jmp.o bin/kernel_main.o -o bin/kernel.tmp 
+REM if %errorlevel% neq 0 exit /b %errorlevel%
+
 REM extract text from kernel.pe
-objcopy -O binary -j .text bin/kernel.tmp bin/kernel.bin
-if %errorlevel% neq 0 exit /b %errorlevel%
+REM objcopy -O binary -j .text bin/kernel.tmp bin/kernel.bin
+REM if %errorlevel% neq 0 exit /b %errorlevel%
