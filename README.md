@@ -28,7 +28,7 @@ The build script uses the [Open Watcom](http://www.openwatcom.org/) linker.
 
 The boot loader loads the kernel (and some more boot code) from the root directory of a fat16 partition, so you'll need to format your media as fat16 (make sure there are at least 2 reserved sectors for the VBR).
 
-Write **mbr.bin** (you can use ld for that) to the first sector, make sure you don't overwrite the partition table - you only need the first 436 bootstrap bytes and the last 2 boot signature bytes (which are probably already there):
+Write **mbr.bin** (you can use dd for that) to the first sector, make sure you don't overwrite the partition table - you only need the first 436 bootstrap bytes and the last 2 boot signature bytes (which are probably already there):
 
 Bootstrap code:
 
