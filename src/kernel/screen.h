@@ -5,6 +5,8 @@
 #define SCREEN_WIDTH        80
 #define DEFAULT_COLOR       0x07
 
+void disable_cursor();
+void update_cursor(int x, int y);
 void clear_screen();
 void print_char(int x, int y, char ch, char color);
 void shift_screen_up();

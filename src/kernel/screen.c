@@ -1,6 +1,23 @@
-#include "kernel_screen.h"
+#include "screen.h"
+#include "common.h"
 
 static char * const s_vram = (char *)0xb8000;
+
+void disable_cursor()
+{
+	outb(0x3d4, 0x0a);
+	outb(0x3d5, 0x20);
+}
+
+void update_cursor(int x, int y)
+{
+	unsigned short pos = y * SCREEN_WIDTH + x;
+ 
+	outb(0x3d4, 0x0f);
+	outb(0x3d5, (unsigned char) (pos & 0xff));
+	outb(0x3d4, 0x0e);
+	outb(0x3d5, (unsigned char) ((pos >> 8) & 0xff));
+}
 
 void clear_screen()
 {

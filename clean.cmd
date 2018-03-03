@@ -4,4 +4,4 @@ REM force unmount hdd if mounted
 imdisk -D -m R:
 
 REM clean
-del bin\* /F /Q
+if exist bin del bin\* /F /Q

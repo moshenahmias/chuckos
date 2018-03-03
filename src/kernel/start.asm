@@ -4,7 +4,6 @@
 	extern kmain
 
 _start:
-
     call kmain          ; start kernel
     nop
     nop

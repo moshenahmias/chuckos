@@ -1,9 +1,14 @@
 name bin/kernel.bin            		# name of resulting binary
 output raw                       	# type of binary (ELF, PE, MZ, PharLap, ...)
 	offset=0x2800              		# skip first meg; base address of binary
-file bin\kernel_jmp.o      			# objects to link - this one has to be first
-file bin\kernel_main.o
-file bin\kernel_screen.o
+file bin\start.o      				# objects to link - this one has to be first
+file bin\main.o
+file bin\screen.o
+file bin\keyboard.o
+file bin\idt.o
+file bin\pic.o
+file bin\paging_asm.o
+file bin\paging_c.o
 order                            	# in which order should segments be put into binary
 	clname CODE offset=0x2800  		# offset for reference fixups
 	clname DATA

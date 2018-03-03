@@ -73,13 +73,13 @@ a20_enabled:
 
 prefetch_queue_cleared:
 
-    mov ax, 0x10                        ; set selectors to kernel data segment (2, gdt, 0)
+    mov ax, 0x0010                      ; set selectors to kernel data segment (2, gdt, 0)
     mov ds, ax
     mov es, ax
     mov fs, ax
     mov gs, ax
     mov ss, ax
-    mov esp, 0x0009fbff                 ; stack pointer
+    mov esp, 0x01000000                 ; stack pointer
 
     db 0x66                             ; jmp to kernel
     db 0xEA
